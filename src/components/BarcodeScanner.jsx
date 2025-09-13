@@ -1,8 +1,6 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { BrowserMultiFormatReader, BarcodeFormat } from '@zxing/browser';
-import { Box, Typography, CircularProgress, Button, Alert, TextField, Snackbar, Paper, keyframes, IconButton, Tooltip, Switch, FormControlLabel } from '@mui/material';
-import { FlashlightOn, FlashlightOff, CameraAlt, QrCode } from '@mui/icons-material';
-import { BarcodeGenerator } from '../utils/barcodeGenerator';
+import { Box, Typography, CircularProgress, Button, Alert, TextField, Snackbar, Paper, keyframes } from '@mui/material';
 
 // Define scan line animation
 const scanLineAnimation = keyframes`
@@ -27,15 +25,13 @@ function BarcodeScanner({ onScanSuccess }) {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
-
+  const [lastScannedCode, setLastScannedCode] = useState('');
   const [lastScanTime, setLastScanTime] = useState(0);
   const [torchAvailable, setTorchAvailable] = useState(false);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const videoRef = useRef(null);
   const controlsRef = useRef(null);
   const streamRef = useRef(null);
-  const permissionErrorLoggedRef = useRef(false);
-  const initializingRef = useRef(false);
 
   // Toggle flashlight/torch if available
   const toggleTorch = async () => {
@@ -60,66 +56,8 @@ function BarcodeScanner({ onScanSuccess }) {
     }
   };
   
-  // Enhanced validation for multiple barcode/QR code formats
-  const validateScannedData = useCallback((scannedData) => {
+  const initializeScanner = async () => {
     try {
-      // Try as secure QR code first
-      const qrValidation = BarcodeGenerator.validateSecureQRData(scannedData);
-      if (qrValidation.isValid) {
-        console.log("Valid secure QR code detected");
-        return true;
-      }
-      
-      // Try as regular barcode
-      const barcodeValidation = BarcodeGenerator.validateBarcode(scannedData);
-      if (barcodeValidation.isValid) {
-        console.log("Valid barcode detected:", barcodeValidation);
-        return true;
-      }
-      
-      // Legacy support for simple numeric IDs
-      if (/^\d+$/.test(scannedData) && scannedData.length >= 3) {
-        console.log("Valid numeric ID detected (legacy format)");
-        return true;
-      }
-      
-      // Support for alphanumeric codes
-      if (/^[A-Za-z0-9]{6,20}$/.test(scannedData)) {
-        console.log("Valid alphanumeric code detected");
-        return true;
-      }
-      
-      console.warn("Invalid format:", scannedData);
-      return false;
-      
-    } catch (validationError) {
-      console.error("Validation error:", validationError);
-      return false;
-    }
-  }, []);
-
-  const initializeScanner = useCallback(async () => {
-    if (initializingRef.current) return;
-    
-    try {
-      initializingRef.current = true;
-      // Stop any existing scanner first
-      if (controlsRef.current) {
-        try {
-          controlsRef.current.stop();
-          controlsRef.current = null;
-        } catch (stopError) {
-          console.warn("Error stopping previous scanner:", stopError);
-        }
-      }
-
-      // Stop existing video stream
-      if (streamRef.current) {
-        const tracks = streamRef.current.getTracks();
-        tracks.forEach(track => track.stop());
-        streamRef.current = null;
-      }
-
       // Create a new reader
       const codeReader = new BrowserMultiFormatReader();
       
@@ -153,13 +91,7 @@ function BarcodeScanner({ onScanSuccess }) {
         
         console.log("Camera access granted, available tracks:", stream.getVideoTracks().length);
       } catch (mediaError) {
-        // Only log permission errors once to reduce console noise
-        if (mediaError.name === 'NotAllowedError' && !permissionErrorLoggedRef.current) {
-          console.error("Media access error:", mediaError);
-          permissionErrorLoggedRef.current = true;
-        } else if (mediaError.name !== 'NotAllowedError') {
-          console.error("Media access error:", mediaError);
-        }
+        console.error("Media access error:", mediaError);
         throw mediaError;
       }
       
@@ -179,9 +111,6 @@ function BarcodeScanner({ onScanSuccess }) {
       console.log("Using camera:", deviceId);
       
       try {
-        // Small delay to prevent video play interruption in React dev mode
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
         controlsRef.current = await codeReader.decodeFromVideoDevice(
           deviceId,
           videoRef.current,
@@ -195,8 +124,8 @@ function BarcodeScanner({ onScanSuccess }) {
               if (currentTime - lastScanTime > 2000) {
                 setLastScanTime(currentTime);
                 
-                // Enhanced validation for multiple formats
-                if (validateScannedData(scannedText)) {
+                // Validate the scanned text (should be a numeric ID)
+                if (/^\d+$/.test(scannedText)) {
                   onScanSuccess(scannedText);
                   setSubmitSuccess(true);
                   setTimeout(() => {
@@ -204,13 +133,12 @@ function BarcodeScanner({ onScanSuccess }) {
                   }, 3000);
                 } else {
                   console.warn("Invalid barcode format:", scannedText);
-                  setError("Invalid barcode format. Please scan a valid student barcode or QR code.");
+                  setError("Invalid barcode format. Please scan a valid student ID.");
                 }
               } else {
                 console.log("Ignoring duplicate scan");
               }
             }
-            // Don't log NotFoundException as it's normal when no barcode is present
             if (error && error.name !== 'NotFoundException') {
               console.warn("Barcode scan error:", error);
             }
@@ -224,11 +152,7 @@ function BarcodeScanner({ onScanSuccess }) {
         throw scannerError;
       }
     } catch (err) {
-      // Only log non-permission errors to reduce console noise
-      if (err.name !== 'NotAllowedError') {
-        console.error("Scanner initialization error:", err);
-      }
-      
+      console.error("Scanner initialization error:", err);
       if (err.name === 'NotReadableError') {
         setCameraError({
           type: "camera_in_use",
@@ -248,17 +172,14 @@ function BarcodeScanner({ onScanSuccess }) {
         setError(`Failed to initialize scanner: ${err.toString()}`);
       }
       setShowManualInput(true);
-    } finally {
-      initializingRef.current = false;
     }
-  }, [onScanSuccess, lastScanTime, setLastScanTime, validateScannedData]);
+  };
 
   useEffect(() => {
     let mounted = true;
-    const currentVideoElement = videoRef.current;
 
     const startScanner = async () => {
-      if (mounted && !isScanning && !scannerInitialized && !initializingRef.current) {
+      if (mounted) {
         console.log("Starting scanner initialization");
         await initializeScanner();
       }
@@ -288,14 +209,14 @@ function BarcodeScanner({ onScanSuccess }) {
       }
       
       // Clean up video
-      if (currentVideoElement) {
-        currentVideoElement.srcObject = null;
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
       }
       
       setIsScanning(false);
       setTorchEnabled(false);
     };
-  }, [retryCount, initializeScanner, isScanning, scannerInitialized]);
+  }, [onScanSuccess, retryCount]);
 
   const handleRetry = () => {
     setRetryCount(prev => prev + 1);
@@ -344,8 +265,6 @@ function BarcodeScanner({ onScanSuccess }) {
     setError('');
     setCameraError(null);
   };
-
-
 
   return (
     <Box sx={{ 
@@ -461,47 +380,12 @@ function BarcodeScanner({ onScanSuccess }) {
           }
         }}
       >
-        {/* Scanner Controls */}
-        {scannerInitialized && (
-          <Box sx={{ 
-            p: 2, 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
-            backgroundColor: 'rgba(0, 0, 0, 0.3)'
-          }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <QrCode sx={{ color: 'white', fontSize: '1.2rem' }} />
-              <Typography variant="body2" sx={{ color: 'white', fontSize: '0.8rem' }}>
-                Ready to scan
-              </Typography>
-            </Box>
-            
-            {torchAvailable && (
-              <Tooltip title={torchEnabled ? "Turn off flash" : "Turn on flash"}>
-                <IconButton 
-                  onClick={toggleTorch}
-                  sx={{ 
-                    color: torchEnabled ? '#ffd54f' : 'white',
-                    backgroundColor: torchEnabled ? 'rgba(255, 213, 79, 0.2)' : 'rgba(255, 255, 255, 0.1)',
-                    '&:hover': {
-                      backgroundColor: torchEnabled ? 'rgba(255, 213, 79, 0.3)' : 'rgba(255, 255, 255, 0.2)'
-                    }
-                  }}
-                >
-                  {torchEnabled ? <FlashlightOn /> : <FlashlightOff />}
-                </IconButton>
-              </Tooltip>
-            )}
-          </Box>
-        )}
-
         <Box sx={{ 
           position: 'relative',
           width: '100%',
           height: '300px',
           overflow: 'hidden',
-          borderRadius: scannerInitialized ? '0 0 12px 12px' : '12px',
+          borderRadius: '12px',
           backgroundColor: 'rgba(0, 0, 0, 0.2)',
           display: 'flex',
           alignItems: 'center',
@@ -516,7 +400,7 @@ function BarcodeScanner({ onScanSuccess }) {
               width: '100%',
               height: '100%',
               objectFit: 'cover',
-              borderRadius: scannerInitialized ? '0 0 12px 12px' : '12px',
+              borderRadius: '12px',
               backgroundColor: 'transparent'
             }}
             playsInline
@@ -577,36 +461,18 @@ function BarcodeScanner({ onScanSuccess }) {
       
       {!error && isScanning && !showManualInput && (
         <>
-          <Box sx={{ 
-            mt: 2, 
-            p: 2, 
-            backgroundColor: 'rgba(255, 255, 255, 0.1)', 
-            borderRadius: '8px',
-            textAlign: 'center'
-          }}>
-            <Typography 
-              variant="body2" 
-              sx={{ 
-                color: 'rgba(255, 255, 255, 0.9)', 
-                textShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
-                fontWeight: 500,
-                fontSize: { xs: '0.8rem', sm: '0.9rem' },
-                mb: 1
-              }}
-            >
-              📱 Position the barcode or QR code within the scanning area
-            </Typography>
-            <Typography 
-              variant="caption" 
-              sx={{ 
-                color: 'rgba(255, 255, 255, 0.7)', 
-                fontSize: { xs: '0.7rem', sm: '0.75rem' },
-                display: 'block'
-              }}
-            >
-              Supports: Student barcodes, QR codes, and ID numbers
-            </Typography>
-          </Box>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              color: 'rgba(255, 255, 255, 0.8)', 
+              mt: 2,
+              textShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
+              fontWeight: 500,
+              fontSize: { xs: '0.75rem', sm: '0.85rem' }
+            }}
+          >
+            Position the barcode within the scanning area
+          </Typography>
           <Typography 
             variant="body2" 
             sx={{ 

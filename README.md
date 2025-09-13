@@ -5,29 +5,12 @@ A modern web application built with React and Vite for tracking student attendan
 
 ## Features
 
-### Core Attendance System
-- 🔐 **Secure Authentication**: Student and admin roles with Firebase Authentication
-- 📱 **Mobile-First Design**: Responsive interface optimized for smartphones and tablets
-- 📊 **Real-time Dashboard**: Live attendance tracking and data visualization
-- 🔍 **Unique Barcode System**: Individual QR codes for each student to prevent duplication
-- 📷 **Enhanced Scanner**: Fast, accurate QR code scanning with fallback manual entry
-- � **Live Data Sync**: Real-time attendance updates across all devices
-
-### Advanced Security & Management
-- 🛡️ **Comprehensive Security**: Role-based access control with audit logging
-- 📈 **Analytics Dashboard**: Interactive charts showing attendance patterns and trends
-- 🔍 **Security Monitoring**: Real-time security event tracking and alerts
-- � **Bulk Operations**: Efficient management of multiple attendance records
-- 🎯 **Session Management**: Secure user session tracking with automatic timeout
-- 📊 **Performance Metrics**: System evaluation for accuracy, usability, and efficiency
-
-### Data Management
-- ☁️ **Cloud Integration**: Secure Firebase Firestore real-time database
-- 📊 **Advanced Analytics**: Comprehensive reporting with interactive visualizations
-- � **Data Synchronization**: Automatic backup and sync across devices
-- 📱 **Offline Capability**: Graceful handling when internet connection is unavailable
-- � **Smart Filtering**: Advanced search and filter options for attendance records
-- 📈 **Export Features**: Data export capabilities for external analysis
+- 🔐 User authentication with student and admin roles
+- 📱 Responsive mobile-friendly interface
+- 📊 Dashboard for viewing attendance records
+- 🔍 QR code generation for student identification
+- 📷 Fast and optimized QR code scanning
+- 🔄 Real-time attendance status updates
 
 ## Technologies Used
 
@@ -102,44 +85,11 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 ```
 
-### Step 5: Set up Firebase Firestore
+### Step 5: Set up Firestore database structure
 
-1. **Deploy Security Rules and Indexes** (Required for the application to work properly):
-
-   First, install Firebase CLI if you haven't already:
-   ```bash
-   npm install -g firebase-tools
-   ```
-
-   Login to Firebase:
-   ```bash
-   firebase login
-   ```
-
-   Deploy the Firestore rules and indexes:
-   ```bash
-   firebase deploy --only firestore
-   ```
-
-   This will deploy:
-   - Security rules from `firestore.rules`
-   - Composite indexes from `firestore.indexes.json`
-
-2. **Database Collections Structure**:
-
-   The following collections will be automatically created when you use the app:
-   - `users` - User profile data (email, idNumber, role, etc.)
-   - `attendance` - Attendance records (studentId, timestamp, status, etc.)
-   - `audit_logs` - Security audit logs for admin monitoring
-   - `security_events` - Security events and alerts
-   - `user_sessions` - User session tracking for security
-
-3. **Create an Admin User**:
-   
-   After deploying, you can create an admin user by:
-   - Registering a new account through the app
-   - Manually updating the user document in Firestore to set `role: 'admin'`
-   - Or use the admin setup feature (navigate to `/admin-setup` after registration)
+Create the following collections:
+- `users` - to store user profile data (with fields for email, idNumber, role, etc.)
+- `attendance` - to record attendance (with fields for idNumber, timestamp, status)
 
 ## Running the Application
 

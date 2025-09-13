@@ -1,17 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { TextField, Button, Box, Typography, Container, Alert, MenuItem, FormControl, InputLabel, Select } from '@mui/material';
-import { BarcodeGenerator } from '../utils/barcodeGenerator';
+import { TextField, Button, Box, Typography, Container, Alert } from '@mui/material';
 
 function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [department, setDepartment] = useState('');
-  const [academicYear, setAcademicYear] = useState(new Date().getFullYear());
+  const [idNumber, setIdNumber] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { signup } = useAuth();
@@ -24,30 +20,14 @@ function Register() {
       return setError('Passwords do not match');
     }
 
-    if (!firstName.trim() || !lastName.trim()) {
-      return setError('First name and last name are required');
-    }
-
-    if (!department) {
-      return setError('Department is required');
+    if (idNumber.trim() === '') {
+      return setError('ID Number is required');
     }
 
     try {
       setError('');
       setLoading(true);
-      
-      // Generate unique barcode ID
-      const barcodeId = await BarcodeGenerator.generateUniqueBarcode(department, academicYear);
-      
-      const studentData = {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        department,
-        academicYear,
-        barcodeId
-      };
-      
-      await signup(studentData, email, password);
+      await signup(idNumber, email, password);
       navigate('/dashboard');
     } catch (error) {
       setError('Failed to create an account: ' + error.message);
@@ -103,37 +83,6 @@ function Register() {
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         
         <Box component="form" onSubmit={handleSubmit}>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="firstName"
-              label="First Name"
-              name="firstName"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              variant="filled"
-              InputProps={{
-                disableUnderline: true,
-              }}
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="lastName"
-              label="Last Name"
-              name="lastName"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              variant="filled"
-              InputProps={{
-                disableUnderline: true,
-              }}
-            />
-          </Box>
-          
           <TextField
             margin="normal"
             required
@@ -150,42 +99,20 @@ function Register() {
             }}
           />
           
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <FormControl 
-              fullWidth 
-              margin="normal" 
-              variant="filled"
-              required
-            >
-              <InputLabel>Department</InputLabel>
-              <Select
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                disableUnderline
-              >
-                {Object.entries(BarcodeGenerator.DEPARTMENTS).map(([code, name]) => (
-                  <MenuItem key={code} value={code}>
-                    {name} ({code})
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            
-            <TextField
-              margin="normal"
-              fullWidth
-              id="academicYear"
-              label="Academic Year"
-              name="academicYear"
-              type="number"
-              value={academicYear}
-              onChange={(e) => setAcademicYear(parseInt(e.target.value))}
-              variant="filled"
-              InputProps={{
-                disableUnderline: true,
-              }}
-            />
-          </Box>
+          <TextField
+            margin="normal"
+            required
+            fullWidth
+            id="idNumber"
+            label="ID Number"
+            name="idNumber"
+            value={idNumber}
+            onChange={(e) => setIdNumber(e.target.value)}
+            variant="filled"
+            InputProps={{
+              disableUnderline: true,
+            }}
+          />
           
           <TextField
             margin="normal"

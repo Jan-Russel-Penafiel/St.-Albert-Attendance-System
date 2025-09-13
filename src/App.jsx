@@ -3,7 +3,6 @@ import { AuthProvider } from './contexts/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
 import Navigation from './components/Navigation';
 import Footer from './components/Footer';
-import FirebaseOptimizationNotice from './components/FirebaseOptimizationNotice';
 import HomePage from './pages/HomePage';
 import Register from './pages/Register';
 import Login from './pages/Login';
@@ -150,8 +149,7 @@ function App() {
         <AuthProvider>
           <div className="app-wrapper">
             <Navigation />
-                        <main style={{ minHeight: '100vh', paddingTop: '64px' }}>
-              <FirebaseOptimizationNotice />
+            <main className="app-main">
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/register" element={<Register />} />
