@@ -1,7 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import BarcodeScanner from '../components/BarcodeScanner';
+import { BarcodeGenerator } from '../utils/barcodeGenerator';
+import AttendanceService from '../services/attendanceService';
+import AttendanceAnalytics from '../components/AttendanceAnalytics';
+import BulkOperationsPanel from '../components/BulkOperationsPanel';
+import SecurityDashboard from '../components/SecurityDashboard';
 import { 
   Container, Box, Typography, Button, Paper, Table, 
   TableBody, TableCell, TableContainer, TableHead, 
@@ -10,9 +15,8 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Chip, Checkbox, CircularProgress, Snackbar
 } from '@mui/material';
-import { collection, addDoc, query, orderBy, getDocs, where, Timestamp, deleteDoc, doc, writeBatch, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../firebase/config';
-import { signOut } from 'firebase/auth';
+import { collection, query, getDocs, where, Timestamp, doc, writeBatch, updateDoc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 function AdminDashboard() {
   const [scanResult, setScanResult] = useState('');
@@ -24,7 +28,7 @@ function AdminDashboard() {
   const [tabValue, setTabValue] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
-  const { currentUser, logout, getUserRole } = useAuth();
+  const { currentUser, getUserRole } = useAuth();
   const navigate = useNavigate();
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -33,6 +37,8 @@ function AdminDashboard() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [selectedRecords, setSelectedRecords] = useState([]);
+  const [studentDetails, setStudentDetails] = useState({}); // Cache for student details
+  const [enrichedRecords, setEnrichedRecords] = useState([]); // Records with student details
   
   // Add status configuration
   const statusConfig = {
@@ -58,6 +64,32 @@ function AdminDashboard() {
     }
   };
 
+  // Set up real-time attendance subscription
+  const setupAttendanceSubscription = useCallback(() => {
+    setLoading(true);
+    console.log("Setting up real-time attendance subscription...");
+    
+    const unsubscribe = AttendanceService.subscribeToAttendance(
+      (records, error) => {
+        if (error) {
+          console.error("Real-time attendance error:", error);
+          setError('Failed to fetch attendance records: ' + error.message);
+          setLoading(false);
+          return;
+        }
+        
+        if (records) {
+          console.log("Real-time attendance update:", records.length, "records");
+          setAttendanceRecords(records);
+          setLoading(false);
+        }
+      },
+      { date: dateFilter === 'today' ? new Date() : null }
+    );
+    
+    return unsubscribe;
+  }, [dateFilter]);
+
   useEffect(() => {
     async function checkAdminAccess() {
       if (!currentUser) {
@@ -76,51 +108,52 @@ function AdminDashboard() {
     }
     
     checkAdminAccess();
-    fetchAttendanceRecords();
-  }, [currentUser, getUserRole, navigate]);
-
-  // Apply filters when attendanceRecords or filter values change
-  useEffect(() => {
-    filterRecords();
-  }, [attendanceRecords, searchTerm, dateFilter]);
-
-  function filterRecords() {
-    let filtered = [...attendanceRecords];
+    const unsubscribe = setupAttendanceSubscription();
     
-    // Apply search filter
-    if (searchTerm) {
-      filtered = filtered.filter(record => 
-        record.idNumber.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+    // Cleanup subscription on unmount
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+      AttendanceService.cleanup();
+    };
+  }, [currentUser, getUserRole, navigate, setupAttendanceSubscription]);
+
+  const filterRecords = useCallback(() => {
+    let filtered = [...enrichedRecords];
+    
+    console.log("Starting filter with enriched records:", enrichedRecords.length);
+    console.log("Search term:", searchTerm);
+    
+    // Filter by search term (barcode ID, student ID, or student name)
+    if (searchTerm.trim()) {
+      filtered = filtered.filter(record => {
+        const searchStr = searchTerm.toLowerCase().trim();
+        const barcodeMatch = record.barcodeId?.toLowerCase().includes(searchStr);
+        const studentIdMatch = record.studentId?.toLowerCase().includes(searchStr);
+        const nameMatch = record.studentDetails?.name?.toLowerCase().includes(searchStr);
+        return barcodeMatch || studentIdMatch || nameMatch;
+      });
     }
     
-    // Apply date filter
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    console.log("After search filter:", filtered.length);
     
+    // Filter by date
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
+    yesterday.setDate(today.getDate() - 1);
     const lastWeek = new Date(today);
-    lastWeek.setDate(lastWeek.getDate() - 7);
-    
+    lastWeek.setDate(today.getDate() - 7);
     const lastMonth = new Date(today);
-    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    lastMonth.setMonth(today.getMonth() - 1);
     
-    switch (dateFilter) {
+    switch(dateFilter) {
       case 'today':
-        filtered = filtered.filter(record => {
-          const recordDate = new Date(record.timestamp);
-          recordDate.setHours(0, 0, 0, 0);
-          return recordDate.getTime() === today.getTime();
-        });
+        filtered = filtered.filter(record => record.timestamp >= today);
         break;
       case 'yesterday':
-        filtered = filtered.filter(record => {
-          const recordDate = new Date(record.timestamp);
-          recordDate.setHours(0, 0, 0, 0);
-          return recordDate.getTime() === yesterday.getTime();
-        });
+        filtered = filtered.filter(record => record.timestamp >= yesterday && record.timestamp < today);
         break;
       case 'week':
         filtered = filtered.filter(record => record.timestamp >= lastWeek);
@@ -135,46 +168,132 @@ function AdminDashboard() {
     
     console.log("Filtered records:", filtered);
     setFilteredRecords(filtered);
-  }
+  }, [enrichedRecords, searchTerm, dateFilter]);
 
-  async function fetchAttendanceRecords() {
-    setLoading(true);
+  // Function to fetch student details
+  const fetchStudentDetails = useCallback(async (barcodeId, studentId) => {
     try {
-      console.log("Fetching attendance records...");
-      const q = query(collection(db, "attendance"), orderBy("timestamp", "desc"));
-      const querySnapshot = await getDocs(q);
-      
-      const records = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        console.log("Processing record:", data);
-        records.push({
-          id: doc.id,
-          idNumber: data.idNumber,
-          timestamp: data.timestamp?.toDate() || new Date(),
-          recordedBy: data.recordedBy,
-          status: data.status || 'Present' // Ensure status is included
-        });
-      });
-      
-      console.log("Fetched records:", records);
-      setAttendanceRecords(records);
-    } catch (error) {
-      console.error("Error fetching attendance records:", error);
-      setError('Failed to fetch attendance records: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  }
+      // Check cache first
+      if (studentDetails[barcodeId]) {
+        return studentDetails[barcodeId];
+      }
 
-  async function handleScanSuccess(idNumber) {
-    console.log("Handling scan success for ID:", idNumber);
-    setScanResult(idNumber);
+      let studentData = null;
+
+      // Try to find by studentId first (more direct)
+      if (studentId) {
+        const userDoc = await getDoc(doc(db, "users", studentId));
+        if (userDoc.exists()) {
+          studentData = userDoc.data();
+        }
+      }
+
+      // If not found by studentId, try to find by barcodeId
+      if (!studentData && barcodeId) {
+        const q = query(collection(db, "users"), where("barcodeId", "==", barcodeId));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          studentData = querySnapshot.docs[0].data();
+        }
+      }
+
+      if (studentData) {
+        const details = {
+          name: studentData.fullName || `${studentData.firstName || ''} ${studentData.lastName || ''}`.trim(),
+          department: studentData.department || 'N/A',
+          academicYear: studentData.academicYear || 'N/A',
+          email: studentData.email || 'N/A'
+        };
+        
+        // Update cache
+        setStudentDetails(prev => ({ ...prev, [barcodeId]: details }));
+        return details;
+      }
+      
+      return {
+        name: 'Unknown Student',
+        department: 'N/A',
+        academicYear: 'N/A',
+        email: 'N/A'
+      };
+    } catch (error) {
+      console.error('Error fetching student details:', error);
+      return {
+        name: 'Error Loading',
+        department: 'N/A',
+        academicYear: 'N/A',
+        email: 'N/A'
+      };
+    }
+  }, [studentDetails]);
+
+  // Function to enrich records with student details
+  const enrichRecordsWithStudentDetails = useCallback(async (records) => {
+    const enriched = await Promise.all(
+      records.map(async (record) => {
+        const studentInfo = await fetchStudentDetails(record.barcodeId, record.studentId);
+        return {
+          ...record,
+          studentDetails: studentInfo
+        };
+      })
+    );
+    setEnrichedRecords(enriched);
+  }, [fetchStudentDetails]);
+
+  // Enrich records when attendance records change
+  useEffect(() => {
+    if (attendanceRecords.length > 0) {
+      enrichRecordsWithStudentDetails(attendanceRecords);
+    } else {
+      setEnrichedRecords([]);
+    }
+  }, [attendanceRecords, enrichRecordsWithStudentDetails]);
+
+  // Apply filters when enrichedRecords or filter values change
+  useEffect(() => {
+    filterRecords();
+  }, [filterRecords]);
+
+  // Manual refresh function for the refresh button
+  const handleRefreshAttendance = () => {
+    console.log("Manual refresh requested");
+    setLoading(true);
+    // The subscription will automatically provide fresh data
+    // Just need to trigger a brief loading state for user feedback
+    setTimeout(() => {
+      setLoading(false);
+    }, 500);
+  };
+
+  async function handleScanSuccess(scannedData) {
+    console.log("Handling scan success for data:", scannedData);
+    
+    let barcodeId = scannedData;
+    let studentId = null;
     
     try {
-      // Validate ID number
-      if (!idNumber || idNumber.trim() === '') {
-        setError('Invalid ID number');
+      // Try to parse as secure QR code first
+      const qrValidation = BarcodeGenerator.validateSecureQRData(scannedData);
+      if (qrValidation.isValid) {
+        barcodeId = qrValidation.barcode;
+        studentId = qrValidation.studentId;
+        console.log("Validated secure QR code:", qrValidation);
+      } else {
+        // Validate as regular barcode
+        const barcodeValidation = BarcodeGenerator.validateBarcode(scannedData);
+        if (!barcodeValidation.isValid) {
+          setError('Invalid barcode format: ' + barcodeValidation.error);
+          return;
+        }
+        barcodeId = scannedData;
+      }
+      
+      setScanResult(barcodeId);
+      
+      // Validate barcode
+      if (!barcodeId || barcodeId.trim() === '') {
+        setError('Invalid barcode');
         return;
       }
 
@@ -185,13 +304,13 @@ function AdminDashboard() {
         
         const q = query(
           collection(db, "attendance"),
-          where("idNumber", "==", idNumber.trim()),
+          where("barcodeId", "==", barcodeId.trim()),
           where("timestamp", ">=", today)
         );
         
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
-          setError(`Attendance for ID ${idNumber} already recorded today`);
+          setError(`Attendance for ID ${barcodeId} already recorded today`);
           setTimeout(() => setError(''), 3000);
           return;
         }
@@ -213,43 +332,30 @@ function AdminDashboard() {
         }
       }
 
-      // Record the attendance
-      console.log("Recording attendance for ID:", idNumber);
-      const timestamp = Timestamp.now();
+      // Record the attendance using the real-time service
+      console.log("Recording attendance for ID:", barcodeId);
       const attendanceData = {
-        idNumber: idNumber.trim(),
-        timestamp: timestamp,
+        barcodeId: barcodeId.trim(),
+        studentId: studentId, // Include student ID if available from QR code
         status: "Present",
         recordedBy: currentUser?.uid || 'unknown'
       };
       
       console.log("Saving attendance data:", attendanceData);
-      const docRef = await addDoc(collection(db, "attendance"), attendanceData);
-      console.log("Attendance recorded with ID:", docRef.id);
+      const newRecord = await AttendanceService.addAttendanceRecord(attendanceData);
+      console.log("Attendance recorded with ID:", newRecord.id);
       
-      // Add the new record to the local state
-      const newRecord = {
-        id: docRef.id,
-        idNumber: attendanceData.idNumber,
-        timestamp: timestamp.toDate(),
-        status: attendanceData.status,
-        recordedBy: attendanceData.recordedBy
-      };
-      
-      console.log("Adding new record to state:", newRecord);
-      
-      // Update both attendanceRecords and filteredRecords
-      setAttendanceRecords(prevRecords => [newRecord, ...prevRecords]);
-      setFilteredRecords(prevRecords => [newRecord, ...prevRecords]);
+      // Note: Real-time subscription will automatically update the UI
+      // No need to manually update state as it's handled by the subscription
       
       // Show success message
       console.log("Showing success message");
-      setSuccessMessage(`Attendance recorded for ID: ${idNumber} (Present)`);
+      setSuccessMessage(`Attendance recorded for ID: ${barcodeId} (Present)`);
       setTimeout(() => setSuccessMessage(''), 3000);
       
       // Show status modal
       setScannedStatus({ 
-        idNumber: idNumber.trim(),
+        idNumber: barcodeId.trim(),
         status: "Present",
         time: new Date().toLocaleTimeString()
       });
@@ -279,26 +385,23 @@ function AdminDashboard() {
     }
   }
 
-  async function handleLogout() {
-    try {
-      await logout();
-      navigate('/login');
-    } catch (error) {
-      setError('Failed to log out: ' + error.message);
-    }
-  }
+
 
   const handleTabChange = (event, newValue) => {
+    console.log('Switching to tab:', newValue);
     setTabValue(newValue);
   };
 
   const exportToCSV = () => {
-    const headers = ['ID Number', 'Date', 'Time', 'Status'];
+    const headers = ['Barcode ID', 'Student Name', 'Department', 'Academic Year', 'Date', 'Time', 'Status'];
     
     const csvData = filteredRecords.map(record => [
-      record.idNumber,
-      record.timestamp.toLocaleDateString(),
-      record.timestamp.toLocaleTimeString(),
+      record.barcodeId,
+      record.studentDetails?.name || 'Loading...',
+      record.studentDetails?.department || 'N/A',
+      record.studentDetails?.academicYear || 'N/A',
+      record.timestamp?.toDate ? record.timestamp.toDate().toLocaleDateString() : new Date(record.timestamp).toLocaleDateString(),
+      record.timestamp?.toDate ? record.timestamp.toDate().toLocaleTimeString() : new Date(record.timestamp).toLocaleTimeString(),
       record.status || 'Present' // Include status, default to 'Present' if not set
     ]);
     
@@ -316,43 +419,7 @@ function AdminDashboard() {
     document.body.removeChild(link);
   };
 
-  const handleDeleteAllRecords = async () => {
-    try {
-      setLoading(true);
-      console.log("Starting to delete all records...");
-      
-      // Get all attendance records
-      const q = query(collection(db, "attendance"));
-      const querySnapshot = await getDocs(q);
-      
-      // Create a batch write
-      const batch = writeBatch(db);
-      
-      // Add each document to the batch delete
-      querySnapshot.forEach((document) => {
-        batch.delete(doc(db, "attendance", document.id));
-      });
-      
-      // Commit the batch
-      await batch.commit();
-      console.log("Successfully deleted all records");
-      
-      // Clear local state
-      setAttendanceRecords([]);
-      setFilteredRecords([]);
-      
-      setSuccessMessage("All attendance records have been deleted");
-      setTimeout(() => setSuccessMessage(''), 3000);
-      
-      // Close the dialog
-      setDeleteDialogOpen(false);
-    } catch (error) {
-      console.error("Error deleting records:", error);
-      setError("Failed to delete records: " + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+
 
   const handleEditStatus = async (record) => {
     setEditingRecord(record);
@@ -516,6 +583,9 @@ function AdminDashboard() {
           >
             <Tab label="QR Scanner" />
             <Tab label="Attendance Records" />
+            <Tab label="Analytics" />
+            <Tab label="Bulk Operations" />
+            <Tab label="Security" />
           </Tabs>
           
           <Box sx={{ p: { xs: 1, sm: 2 } }}>
@@ -542,7 +612,7 @@ function AdminDashboard() {
                   <Grid item xs={12} sm={6} md={4}>
                     <TextField
                       fullWidth
-                      label="Search by ID"
+                      label="Search by Barcode/Student Name/Department"
                       variant="outlined"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
@@ -567,7 +637,7 @@ function AdminDashboard() {
                   <Grid item xs={12} sm={12} md={4} sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                     <Button 
                       variant="outlined"
-                      onClick={fetchAttendanceRecords}
+                      onClick={handleRefreshAttendance}
                       sx={{ visibility: 'visible' }}
                       color='white'
                     >
@@ -602,7 +672,10 @@ function AdminDashboard() {
                             sx={{ color: 'white' }}
                           />
                         </TableCell>
-                        <TableCell><Typography variant="subtitle2" sx={{ color: 'white', fontWeight: 700 }}>ID Number</Typography></TableCell>
+                        <TableCell><Typography variant="subtitle2" sx={{ color: 'white', fontWeight: 700 }}>Barcode ID</Typography></TableCell>
+                        <TableCell><Typography variant="subtitle2" sx={{ color: 'white', fontWeight: 700 }}>Student Name</Typography></TableCell>
+                        <TableCell><Typography variant="subtitle2" sx={{ color: 'white', fontWeight: 700 }}>Department</Typography></TableCell>
+                        <TableCell><Typography variant="subtitle2" sx={{ color: 'white', fontWeight: 700 }}>Year</Typography></TableCell>
                         <TableCell><Typography variant="subtitle2" sx={{ color: 'white', fontWeight: 700 }}>Date</Typography></TableCell>
                         <TableCell><Typography variant="subtitle2" sx={{ color: 'white', fontWeight: 700 }}>Time</Typography></TableCell>
                         <TableCell><Typography variant="subtitle2" sx={{ color: 'white', fontWeight: 700 }}>Status</Typography></TableCell>
@@ -625,9 +698,12 @@ function AdminDashboard() {
                                 sx={{ color: 'white' }}
                               />
                             </TableCell>
-                            <TableCell><Typography sx={{ color: 'white' }}>{record.idNumber}</Typography></TableCell>
-                            <TableCell><Typography sx={{ color: 'white' }}>{record.timestamp.toLocaleDateString()}</Typography></TableCell>
-                            <TableCell><Typography sx={{ color: 'white' }}>{record.timestamp.toLocaleTimeString()}</Typography></TableCell>
+                            <TableCell><Typography sx={{ color: 'white' }}>{record.barcodeId}</Typography></TableCell>
+                            <TableCell><Typography sx={{ color: 'white' }}>{record.studentDetails?.name || 'Loading...'}</Typography></TableCell>
+                            <TableCell><Typography sx={{ color: 'white' }}>{record.studentDetails?.department || 'N/A'}</Typography></TableCell>
+                            <TableCell><Typography sx={{ color: 'white' }}>{record.studentDetails?.academicYear || 'N/A'}</Typography></TableCell>
+                            <TableCell><Typography sx={{ color: 'white' }}>{record.timestamp?.toDate ? record.timestamp.toDate().toLocaleDateString() : new Date(record.timestamp).toLocaleDateString()}</Typography></TableCell>
+                            <TableCell><Typography sx={{ color: 'white' }}>{record.timestamp?.toDate ? record.timestamp.toDate().toLocaleTimeString() : new Date(record.timestamp).toLocaleTimeString()}</Typography></TableCell>
                             <TableCell>
                               <Chip
                                 label={record.status}
@@ -676,6 +752,38 @@ function AdminDashboard() {
                     Showing {filteredRecords.length} of {attendanceRecords.length} records
                   </Typography>
                 </Box>
+              </Paper>
+            )}
+
+            {tabValue === 2 && (
+              <Paper elevation={3} sx={{ p: { xs: 2, sm: 3 }, mx: 'auto', overflow: 'auto' }}>
+                <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1rem', sm: '1.1rem', md: '1.25rem' } }}>
+                  Attendance Analytics
+                </Typography>
+                <AttendanceAnalytics attendanceRecords={attendanceRecords} />
+              </Paper>
+            )}
+
+            {tabValue === 3 && (
+              <Paper elevation={3} sx={{ p: { xs: 2, sm: 3 }, mx: 'auto', overflow: 'auto' }}>
+                <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1rem', sm: '1.1rem', md: '1.25rem' } }}>
+                  Bulk Operations
+                </Typography>
+                <BulkOperationsPanel 
+                  attendanceRecords={attendanceRecords}
+                  selectedRecords={selectedRecords}
+                  onOperationComplete={() => {
+                    // Refresh attendance data after bulk operations
+                    handleRefreshAttendance();
+                    setSelectedRecords([]);
+                  }}
+                />
+              </Paper>
+            )}
+
+            {tabValue === 4 && (
+              <Paper elevation={3} sx={{ p: { xs: 2, sm: 3 }, mx: 'auto', overflow: 'auto' }}>
+                <SecurityDashboard />
               </Paper>
             )}
           </Box>
@@ -755,13 +863,13 @@ function AdminDashboard() {
                 Attendance Information
               </Typography>
               <Typography sx={{ color: 'white' }}>
-                <strong>ID:</strong> {editingRecord?.idNumber}
+                <strong>ID:</strong> {editingRecord?.barcodeId}
               </Typography>
               <Typography sx={{ color: 'white' }}>
-                <strong>Date:</strong> {editingRecord?.timestamp.toLocaleDateString()}
+                <strong>Date:</strong> {editingRecord?.timestamp?.toDate ? editingRecord.timestamp.toDate().toLocaleDateString() : new Date(editingRecord?.timestamp).toLocaleDateString()}
               </Typography>
               <Typography sx={{ color: 'white' }}>
-                <strong>Time:</strong> {editingRecord?.timestamp.toLocaleTimeString()}
+                <strong>Time:</strong> {editingRecord?.timestamp?.toDate ? editingRecord.timestamp.toDate().toLocaleTimeString() : new Date(editingRecord?.timestamp).toLocaleTimeString()}
               </Typography>
             </Box>
 

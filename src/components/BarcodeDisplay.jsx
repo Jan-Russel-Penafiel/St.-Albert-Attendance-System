@@ -1,19 +1,51 @@
-import { useRef, useEffect } from 'react';
-import { Box, Typography, Paper } from '@mui/material';
+import { useRef, useEffect, useState } from 'react';
+import { Box, Typography, Paper, Alert, Chip, CircularProgress } from '@mui/material';
 import JsBarcode from 'jsbarcode';
+import { BarcodeGenerator } from '../utils/barcodeGenerator';
+import { useAuth } from '../contexts/AuthContext';
 
-function BarcodeDisplay({ studentId, studentName }) {
+function BarcodeDisplay() {
   const barcodeRef = useRef(null);
+  const [studentData, setStudentData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const { currentUser, getUserData } = useAuth();
 
   useEffect(() => {
-    if (barcodeRef.current && studentId) {
+    async function fetchStudentData() {
+      if (!currentUser) return;
+      
       try {
-        JsBarcode(barcodeRef.current, studentId, {
+        setLoading(true);
+        const userData = await getUserData();
+        
+        if (!userData) {
+          setError('Student data not found');
+          return;
+        }
+
+        setStudentData(userData);
+        
+      } catch (err) {
+        console.error('Error fetching student data:', err);
+        setError('Failed to load student information');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchStudentData();
+  }, [currentUser, getUserData]);
+
+  useEffect(() => {
+    if (barcodeRef.current && studentData?.barcodeId) {
+      try {
+        JsBarcode(barcodeRef.current, studentData.barcodeId, {
           format: "CODE128",
           width: 2,
           height: 100,
           displayValue: true,
-          fontSize: 20,
+          fontSize: 16,
           margin: 10,
           background: "white",
           lineColor: "#000000",
@@ -32,7 +64,53 @@ function BarcodeDisplay({ studentId, studentName }) {
         console.error('Error generating barcode:', err);
       }
     }
-  }, [studentId]);
+  }, [studentData]);
+
+  if (loading) {
+    return (
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center',
+        gap: 2
+      }}>
+        <CircularProgress sx={{ color: 'white' }} />
+        <Typography sx={{ color: 'white' }}>Loading student information...</Typography>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center',
+        gap: 2
+      }}>
+        <Alert severity="error" sx={{ width: '100%' }}>
+          {error}
+        </Alert>
+      </Box>
+    );
+  }
+
+  if (!studentData) {
+    return (
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center',
+        gap: 2
+      }}>
+        <Alert severity="warning" sx={{ width: '100%' }}>
+          No student data available
+        </Alert>
+      </Box>
+    );
+  }
+
+  const barcodeValidation = BarcodeGenerator.validateBarcode(studentData.barcodeId);
 
   return (
     <Box sx={{ 
@@ -48,11 +126,28 @@ function BarcodeDisplay({ studentId, studentName }) {
           color: 'white',
           fontWeight: 600,
           textShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
-          mb: 2
+          mb: 1
         }}
       >
-        Your Barcode
+        Your Digital ID
       </Typography>
+      
+      {/* Student Information */}
+      <Box sx={{ textAlign: 'center', mb: 2 }}>
+        <Typography variant="body1" sx={{ color: 'white', fontWeight: 500 }}>
+          {studentData.fullName}
+        </Typography>
+        <Chip 
+          label={`${barcodeValidation.departmentName} • ${barcodeValidation.year}`}
+          size="small"
+          sx={{ 
+            mt: 1, 
+            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            color: 'white'
+          }}
+        />
+      </Box>
+      
       <Typography 
         variant="body2" 
         sx={{ 
@@ -61,8 +156,10 @@ function BarcodeDisplay({ studentId, studentName }) {
           mb: 2
         }}
       >
-        Show this barcode to your instructor to mark your attendance
+        Show this barcode to mark your attendance
       </Typography>
+
+      {/* Barcode */}
       <Paper
         sx={{
           p: 3,
@@ -72,7 +169,8 @@ function BarcodeDisplay({ studentId, studentName }) {
           transition: 'transform 0.3s ease',
           '&:hover': {
             transform: 'scale(1.02)'
-          }
+          },
+          mb: 2
         }}
       >
         <Box sx={{ 
@@ -90,20 +188,20 @@ function BarcodeDisplay({ studentId, studentName }) {
         }}>
           <svg ref={barcodeRef}></svg>
         </Box>
-        {studentName && (
-          <Typography 
-            variant="body2" 
-            sx={{ 
-              textAlign: 'center',
-              mt: 1,
-              color: '#666',
-              fontWeight: 500
-            }}
-          >
-            {studentName}
-          </Typography>
-        )}
+        <Typography 
+          variant="body2" 
+          sx={{ 
+            textAlign: 'center',
+            mt: 1,
+            color: '#666',
+            fontWeight: 500
+          }}
+        >
+          {studentData.barcodeId}
+        </Typography>
       </Paper>
+
+
     </Box>
   );
 }

@@ -6,13 +6,16 @@ import { AppBar, Toolbar, Typography, Button, Box, IconButton, Menu, MenuItem, A
 function Navigation() {
   const [userRole, setUserRole] = useState(null);
   const [anchorEl, setAnchorEl] = useState(null);
-  const { currentUser, logout, getUserRole } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Use a default object to prevent destructuring errors
+  const authContext = useAuth() || {};
+  const { currentUser, logout, getUserRole, loading } = authContext;
+
   useEffect(() => {
     async function checkUserRole() {
-      if (currentUser) {
+      if (currentUser && getUserRole) {
         try {
           const role = await getUserRole();
           setUserRole(role);
@@ -44,6 +47,11 @@ function Navigation() {
   const handleMenuClose = () => {
     setAnchorEl(null);
   };
+
+  // Don't show nav if auth context is not available or still loading
+  if (!authContext || loading) {
+    return null;
+  }
 
   // Don't show nav on login, register, or home pages
   if (
@@ -271,10 +279,10 @@ function Navigation() {
               }
             }}
           >
-            {currentUser && (
-              <>
-                {userRole === 'admin' && (
+            {currentUser && [
+                userRole === 'admin' && (
                   <MenuItem 
+                    key="admin-dashboard"
                     component={Link} 
                     to="/admin" 
                     onClick={handleMenuClose}
@@ -288,9 +296,10 @@ function Navigation() {
                   >
                     Admin Dashboard
                   </MenuItem>
-                )}
-                {location.pathname !== '/admin' && (
+                ),
+                location.pathname !== '/admin' && (
                   <MenuItem 
+                    key="dashboard"
                     component={Link} 
                     to="/dashboard" 
                     onClick={handleMenuClose}
@@ -304,9 +313,10 @@ function Navigation() {
                   >
                     Dashboard
                   </MenuItem>
-                )}
-                {userRole === 'admin' && (
+                ),
+                userRole === 'admin' && (
                   <MenuItem 
+                    key="admin-setup"
                     component={Link} 
                     to="/admin-setup" 
                     onClick={handleMenuClose}
@@ -320,8 +330,9 @@ function Navigation() {
                   >
                     Admin Setup
                   </MenuItem>
-                )}
+                ),
                 <MenuItem 
+                  key="logout"
                   onClick={handleLogout}
                   sx={{ 
                     color: 'white',
@@ -335,11 +346,10 @@ function Navigation() {
                 >
                   Logout
                 </MenuItem>
-              </>
-            )}
-            {!currentUser && (
-              <>
+              ].filter(Boolean)}
+            {!currentUser && [
                 <MenuItem 
+                  key="login"
                   component={Link} 
                   to="/login" 
                   onClick={handleMenuClose}
@@ -352,8 +362,9 @@ function Navigation() {
                   }}
                 >
                   Login
-                </MenuItem>
+                </MenuItem>,
                 <MenuItem 
+                  key="register"
                   component={Link} 
                   to="/register" 
                   onClick={handleMenuClose}
@@ -368,8 +379,7 @@ function Navigation() {
                 >
                   Register
                 </MenuItem>
-              </>
-            )}
+              ]}
           </Menu>
         </Box>
       </Toolbar>

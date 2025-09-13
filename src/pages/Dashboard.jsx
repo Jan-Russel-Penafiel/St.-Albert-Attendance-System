@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Container, Box, Typography, Button, Paper, CircularProgress, Alert, Snackbar, Tabs, Tab } from '@mui/material';
 import { auth, db } from '../firebase/config';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import BarcodeDisplay from '../components/BarcodeDisplay';
+import AttendanceService from '../services/attendanceService';
 
 function Dashboard() {
   const [user, setUser] = useState(null);
@@ -17,6 +18,36 @@ function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let unsubscribeHistory = null;
+    
+    const setupAttendanceHistorySubscription = (userId) => {
+      try {
+        console.log("Setting up student attendance subscription for:", userId);
+        
+        const unsubscribe = AttendanceService.subscribeToStudentAttendance(
+          userId,
+          (history, error) => {
+            if (error) {
+              console.error('Error in student attendance subscription:', error);
+              setError('Failed to fetch attendance history');
+              return;
+            }
+            
+            if (history) {
+              console.log("Student attendance update:", history.length, "records");
+              setAttendanceHistory(history);
+            }
+          }
+        );
+        
+        return unsubscribe;
+      } catch (err) {
+        console.error('Error setting up attendance history subscription:', err);
+        setError('Failed to fetch attendance history');
+        return () => {}; // Return empty function for consistency
+      }
+    };
+    
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
       if (user) {
         setUser(user);
@@ -27,8 +58,8 @@ function Dashboard() {
           
           if (studentDoc.exists()) {
             setStudentData(studentDoc.data());
-            // Then fetch attendance history
-            await fetchAttendanceHistory(user.uid);
+            // Set up real-time attendance history subscription
+            unsubscribeHistory = setupAttendanceHistorySubscription(user.uid);
           } else {
             setError('Student data not found. Please contact your administrator.');
           }
@@ -42,24 +73,13 @@ function Dashboard() {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (unsubscribeHistory) {
+        unsubscribeHistory();
+      }
+    };
   }, [navigate]);
-
-  const fetchAttendanceHistory = async (userId) => {
-    try {
-      const attendanceRef = collection(db, 'attendance');
-      const q = query(attendanceRef, where('userId', '==', userId));
-      const querySnapshot = await getDocs(q);
-      const history = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setAttendanceHistory(history.sort((a, b) => b.timestamp.toDate() - a.timestamp.toDate()));
-    } catch (err) {
-      console.error('Error fetching attendance history:', err);
-      setError('Failed to fetch attendance history');
-    }
-  };
 
   const handleLogout = async () => {
     try {
@@ -168,11 +188,8 @@ function Dashboard() {
             <Tab label="Attendance History" />
           </Tabs>
 
-          {tabValue === 0 && studentData && (
-            <BarcodeDisplay 
-              studentId={studentData.idNumber}
-              studentName={studentData.idNumber}
-            />
+          {tabValue === 0 && (
+            <BarcodeDisplay />
           )}
 
           {tabValue === 1 && (
