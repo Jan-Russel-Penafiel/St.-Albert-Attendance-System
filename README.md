@@ -1,24 +1,27 @@
 
-# Student Attendance Tracking System
+# Barcode-Operated Among Class Attendance Monitoring System
 
-A modern web application built with React and Vite for tracking student attendance using QR code scanning technology. This system allows students to display their unique QR codes for attendance marking, while administrators can scan these codes to record attendance.
+**South Central Mindanao College of Science and Technology Inc. - Secondary Level**
+
+A modern web application built with React and Vite for tracking student attendance using barcode scanning technology. This system allows students to display their unique barcodes for attendance marking, while administrators can scan these codes to record attendance efficiently in the secondary education environment.
 
 ## Features
 
 - 🔐 User authentication with student and admin roles
-- 📱 Responsive mobile-friendly interface
-- 📊 Dashboard for viewing attendance records
-- 🔍 QR code generation for student identification
-- 📷 Fast and optimized QR code scanning
+- 📱 Responsive mobile-friendly interface designed for secondary students
+- 📊 Dashboard for viewing attendance records and analytics
+- 🏷️ Barcode generation for student identification
+- 📷 Fast and optimized barcode scanning with duplicate prevention
 - 🔄 Real-time attendance status updates
+- 🎯 Specifically designed for secondary level education needs
 
 ## Technologies Used
 
 - React + Vite for fast and efficient frontend development
-- Firebase Authentication for user management
-- Firestore for database storage
+- Firebase Authentication for secure user management
+- Firestore for reliable database storage
 - Material UI for responsive component styling
-- HTML5-QRCode library for QR scanning functionality
+- ZXing Browser library for barcode scanning functionality
 - date-fns for date formatting
 
 ## Prerequisites
@@ -161,10 +164,10 @@ VITE_DEBUG_MODE=false
    - Create an account or log in with your credentials
    - Your profile will display your unique ID number
 
-2. **Viewing Your QR Code**
-   - On the Dashboard's "Profile" tab, you'll see your personal QR code
-   - This QR code contains your ID number for attendance tracking
-   - Present this QR code to your instructor during class
+2. **Viewing Your Barcode**
+   - On the Dashboard's "Profile" tab, you'll see your personal barcode
+   - This barcode contains your ID number for attendance tracking
+   - Present this barcode to your instructor during class
 
 3. **Checking Attendance Records**
    - Navigate to the "Attendance Records" tab
@@ -176,8 +179,8 @@ VITE_DEBUG_MODE=false
 
 1. **Scanning Attendance**
    - Log in with admin credentials
-   - Navigate to the "Scan QR" tab in the Dashboard
-   - Use the scanner to scan student QR codes
+   - Navigate to the "Scan Barcode" tab in the Dashboard
+   - Use the scanner to scan student barcodes
    - The system will automatically record the attendance
 
 2. **Manual ID Entry**
@@ -229,10 +232,10 @@ To ensure optimal performance, the project uses:
 
 ## Troubleshooting
 
-### QR Scanner Issues
+### Barcode Scanner Issues
 - Ensure your camera is working and has proper permissions
 - Make sure there is adequate lighting when scanning
-- Position the QR code within the scanning frame
+- Position the barcode within the scanning frame
 - If scanning fails, use the manual input option
 - Try using a different browser if camera access is problematic
 

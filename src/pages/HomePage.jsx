@@ -36,10 +36,26 @@ function HomePage() {
       </Box>
       
       <Typography className="app-title slide-up">
-        Attendance
+        BARCODE-OPERATED
       </Typography>
       <Typography className="app-subtitle slide-up">
-        TRACKING
+        AMONG CLASS ATTENDANCE MONITORING
+      </Typography>
+      <Typography 
+        variant="h6" 
+        className="slide-up" 
+        sx={{ 
+          color: 'rgba(255, 255, 255, 0.9)',
+          fontWeight: 'bold',
+          textAlign: 'center',
+          mb: 3,
+          fontSize: { xs: '0.9rem', sm: '1.1rem' },
+          lineHeight: 1.3
+        }}
+      >
+        AT SOUTH CENTRAL MINDANAO COLLEGE OF SCIENCE AND TECHNOLOGY INC.
+        <br />
+        SECONDARY LEVEL
       </Typography>
       
       <Paper 
@@ -50,7 +66,7 @@ function HomePage() {
         }}
       >
         <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 3 }}>
-          Simplify attendance with QR code technology
+          Efficient attendance tracking with barcode technology for secondary education
         </Typography>
         
         <Box className="slide-up" sx={{ textAlign: 'left', mb: 4 }}>
@@ -69,7 +85,7 @@ function HomePage() {
                 For Students
               </Typography>
               <ul style={{ margin: 0, paddingLeft: '20px', color: 'white' }}>
-                <li>Personal QR code</li>
+                <li>Personal barcode</li>
                 <li>Attendance history</li>
                 <li>User-friendly interface</li>
               </ul>
@@ -85,7 +101,7 @@ function HomePage() {
                 For Administrators
               </Typography>
               <ul style={{ margin: 0, paddingLeft: '20px', color: 'white' }}>
-                <li>QR code scanner</li>
+                <li>Barcode scanner</li>
                 <li>Attendance records</li>
                 <li>Data export tools</li>
               </ul>
