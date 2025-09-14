@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import BarcodeScanner from '../components/BarcodeScanner';
+import attendanceService from '../services/attendanceService';
 import { 
   Container, Box, Typography, Button, Paper, Table, 
   TableBody, TableCell, TableContainer, TableHead, 
@@ -10,9 +11,8 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Chip, Checkbox, CircularProgress, Snackbar
 } from '@mui/material';
-import { collection, addDoc, query, orderBy, getDocs, where, Timestamp, deleteDoc, doc, writeBatch, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../firebase/config';
-import { signOut } from 'firebase/auth';
+import { collection, query, orderBy, getDocs, Timestamp, doc, writeBatch, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 function AdminDashboard() {
   const [scanResult, setScanResult] = useState('');
@@ -141,21 +141,7 @@ function AdminDashboard() {
     setLoading(true);
     try {
       console.log("Fetching attendance records...");
-      const q = query(collection(db, "attendance"), orderBy("timestamp", "desc"));
-      const querySnapshot = await getDocs(q);
-      
-      const records = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        console.log("Processing record:", data);
-        records.push({
-          id: doc.id,
-          idNumber: data.idNumber,
-          timestamp: data.timestamp?.toDate() || new Date(),
-          recordedBy: data.recordedBy,
-          status: data.status || 'Present' // Ensure status is included
-        });
-      });
+      const records = await attendanceService.getAttendanceRecords();
       
       console.log("Fetched records:", records);
       setAttendanceRecords(records);
@@ -178,74 +164,37 @@ function AdminDashboard() {
         return;
       }
 
-      // Check for duplicate attendance today
-      try {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        const q = query(
-          collection(db, "attendance"),
-          where("idNumber", "==", idNumber.trim()),
-          where("timestamp", ">=", today)
-        );
-        
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          setError(`Attendance for ID ${idNumber} already recorded today`);
-          setTimeout(() => setError(''), 3000);
-          return;
-        }
-      } catch (indexError) {
-        // Temporary workaround: If we get an index error, we'll skip the duplicate check
-        console.warn("Skipping duplicate check due to index error:", indexError);
-        
-        if (indexError.message.includes("requires an index")) {
-          setError(
-            "Firebase index needs to be created. To avoid duplicate entries, please check records before scanning. " +
-            "Go to Firebase console to create the required index (see console for link)."
-          );
-          console.info(
-            "Create the required index by visiting the link in the error message or going to:" +
-            "Firebase console > Firestore Database > Indexes > Add composite index"
-          );
-          // Don't return here, continue with recording attendance
-          setTimeout(() => setError(''), 8000);
-        }
-      }
-
-      // Record the attendance
-      console.log("Recording attendance for ID:", idNumber);
-      const timestamp = Timestamp.now();
-      const attendanceData = {
-        idNumber: idNumber.trim(),
-        timestamp: timestamp,
-        status: "Present",
-        recordedBy: currentUser?.uid || 'unknown'
-      };
+      setLoading(true);
       
-      console.log("Saving attendance data:", attendanceData);
-      const docRef = await addDoc(collection(db, "attendance"), attendanceData);
-      console.log("Attendance recorded with ID:", docRef.id);
+      // Use the new attendance service with robust duplicate prevention
+      const result = await attendanceService.recordAttendance(
+        idNumber.trim(),
+        currentUser?.uid || 'unknown'
+      );
+      
+      console.log("Attendance recorded successfully:", result);
       
       // Add the new record to the local state
       const newRecord = {
-        id: docRef.id,
-        idNumber: attendanceData.idNumber,
-        timestamp: timestamp.toDate(),
-        status: attendanceData.status,
-        recordedBy: attendanceData.recordedBy
+        id: result.id,
+        idNumber: result.idNumber,
+        timestamp: result.timestamp,
+        status: result.status,
+        recordedBy: result.recordedBy
       };
-      
-      console.log("Adding new record to state:", newRecord);
       
       // Update both attendanceRecords and filteredRecords
       setAttendanceRecords(prevRecords => [newRecord, ...prevRecords]);
       setFilteredRecords(prevRecords => [newRecord, ...prevRecords]);
       
-      // Show success message
-      console.log("Showing success message");
-      setSuccessMessage(`Attendance recorded for ID: ${idNumber} (Present)`);
-      setTimeout(() => setSuccessMessage(''), 3000);
+      // Show success message with additional info if there was a warning
+      let successMsg = `✅ Attendance recorded for ID: ${idNumber} (Present)`;
+      if (result.duplicateCheckWarning) {
+        successMsg += ` ⚠️ Warning: ${result.duplicateCheckWarning}`;
+      }
+      
+      setSuccessMessage(successMsg);
+      setTimeout(() => setSuccessMessage(''), 5000);
       
       // Show status modal
       setScannedStatus({ 
@@ -264,18 +213,28 @@ function AdminDashboard() {
       }, 3000);
       
       return true; // Return true to indicate success to the QRScanner
+      
     } catch (error) {
-      console.error("Error in handleScanSuccess:", error);
-      if (error.message.includes("requires an index")) {
+      console.error("Error recording attendance:", error);
+      
+      // Handle different types of errors
+      if (error.message.includes('Duplicate attendance detected')) {
+        setError(`🚫 ${error.message}`);
+        setTimeout(() => setError(''), 5000);
+      } else if (error.message.includes("requires an index")) {
         setError(
           "Firebase index needs to be created. Please visit the Firebase console to create the index. " +
           "You can continue to use the app, but duplicate entries will not be detected until the index is created."
         );
+        setTimeout(() => setError(''), 8000);
       } else {
-        setError('Failed to record attendance: ' + error.message);
+        setError(`Failed to record attendance: ${error.message}`);
+        setTimeout(() => setError(''), 4000);
       }
-      setTimeout(() => setError(''), 5000);
+      
       throw error; // Re-throw to let QRScanner know there was an error
+    } finally {
+      setLoading(false);
     }
   }
 

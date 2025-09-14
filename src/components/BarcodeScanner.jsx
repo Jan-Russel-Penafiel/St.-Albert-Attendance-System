@@ -23,6 +23,7 @@ function BarcodeScanner({ onScanSuccess }) {
   const [scannerInitialized, setScannerInitialized] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [duplicateDetected, setDuplicateDetected] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
   const [lastScannedCode, setLastScannedCode] = useState('');
@@ -114,7 +115,7 @@ function BarcodeScanner({ onScanSuccess }) {
         controlsRef.current = await codeReader.decodeFromVideoDevice(
           deviceId,
           videoRef.current,
-          (result, error) => {
+          async (result, error) => {
             if (result) {
               const scannedText = result.getText();
               console.log("Barcode scanned successfully:", scannedText);
@@ -126,11 +127,30 @@ function BarcodeScanner({ onScanSuccess }) {
                 
                 // Validate the scanned text (should be a numeric ID)
                 if (/^\d+$/.test(scannedText)) {
-                  onScanSuccess(scannedText);
-                  setSubmitSuccess(true);
-                  setTimeout(() => {
-                    setSubmitSuccess(false);
-                  }, 3000);
+                  try {
+                    setIsSubmitting(true);
+                    await onScanSuccess(scannedText);
+                    setSubmitSuccess(true);
+                    setDuplicateDetected(false);
+                    setTimeout(() => {
+                      setSubmitSuccess(false);
+                    }, 3000);
+                  } catch (error) {
+                    console.error("Scan submission error:", error);
+                    if (error.message.includes('Duplicate attendance detected')) {
+                      setDuplicateDetected(true);
+                      setError(`🚫 ${error.message.split('!')[1] || 'Already recorded today'}`);
+                      setTimeout(() => {
+                        setDuplicateDetected(false);
+                        setError('');
+                      }, 5000);
+                    } else {
+                      setError(`Failed to record: ${error.message}`);
+                      setTimeout(() => setError(''), 4000);
+                    }
+                  } finally {
+                    setIsSubmitting(false);
+                  }
                 } else {
                   console.warn("Invalid barcode format:", scannedText);
                   setError("Invalid barcode format. Please scan a valid student ID.");
@@ -417,7 +437,7 @@ function BarcodeScanner({ onScanSuccess }) {
                 transform: 'translate(-50%, -50%)',
                 width: '80%',
                 height: '100px',
-                border: '2px solid rgba(255, 255, 255, 0.7)',
+                border: `2px solid ${duplicateDetected ? 'rgba(255, 82, 82, 0.8)' : isSubmitting ? 'rgba(255, 193, 7, 0.8)' : 'rgba(255, 255, 255, 0.7)'}`,
                 borderRadius: '4px',
                 boxShadow: '0 0 0 5000px rgba(0, 0, 0, 0.5)',
                 zIndex: 1,
@@ -428,11 +448,36 @@ function BarcodeScanner({ onScanSuccess }) {
                   left: 0,
                   right: 0,
                   height: '2px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.5)',
-                  animation: `${scanLineAnimation} 2s linear infinite`
+                  backgroundColor: duplicateDetected ? 'rgba(255, 82, 82, 0.5)' : isSubmitting ? 'rgba(255, 193, 7, 0.5)' : 'rgba(255, 255, 255, 0.5)',
+                  animation: isSubmitting ? 'none' : `${scanLineAnimation} 2s linear infinite`
                 }
               }}
             />
+          )}
+          
+          {/* Processing indicator */}
+          {isSubmitting && (
+            <Box
+              sx={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 1,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                borderRadius: '8px',
+                padding: '16px',
+                zIndex: 2
+              }}
+            >
+              <CircularProgress size={30} sx={{ color: '#ffd180' }} />
+              <Typography sx={{ color: '#ffd180', fontSize: '0.8rem' }}>
+                Processing...
+              </Typography>
+            </Box>
           )}
           {!scannerInitialized && (
             <Box sx={{ 
@@ -524,7 +569,28 @@ function BarcodeScanner({ onScanSuccess }) {
           }}
         >
           <Typography variant="body2">
-            Barcode scanned successfully!
+            ✅ Attendance recorded successfully!
+          </Typography>
+        </Alert>
+      </Snackbar>
+      
+      <Snackbar
+        open={duplicateDetected}
+        autoHideDuration={5000}
+        onClose={() => setDuplicateDetected(false)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert 
+          severity="warning" 
+          sx={{ 
+            backgroundColor: 'rgba(255, 152, 0, 0.9)',
+            color: 'white',
+            width: '100%',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)'
+          }}
+        >
+          <Typography variant="body2">
+            🚫 Duplicate attendance detected!
           </Typography>
         </Alert>
       </Snackbar>
