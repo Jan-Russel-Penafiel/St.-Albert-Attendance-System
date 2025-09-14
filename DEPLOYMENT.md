@@ -28,7 +28,7 @@ git push origin main
 5. Configure the deployment:
    - **Name**: `st-albert-attendance-system`
    - **Branch**: `main`
-   - **Build Command**: `npm install && npm run build`
+   - **Build Command**: `corepack enable && pnpm install && pnpm run build`
    - **Publish Directory**: `dist`
 
 ### 3. Environment Variables (Optional for Enhanced Security)
@@ -47,8 +47,8 @@ In Render dashboard → Environment tab, add:
 ### 4. Build Configuration
 
 The project includes a `render.yaml` file that automatically configures:
-- Node.js version 18
-- Build command: `npm install && npm run build`
+- Node.js version 20.10.0 (LTS)
+- Build command: `corepack enable && pnpm install && pnpm run build`
 - Static file serving from `dist` directory
 - Single Page Application routing (all routes redirect to index.html)
 
@@ -86,13 +86,13 @@ The project includes a `render.yaml` file that automatically configures:
 To test the build locally before deployment:
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Build for production
-npm run build
+pnpm run build
 
 # Preview the build locally
-npm run preview
+pnpm run preview
 ```
 
 ## Firebase Security Rules
