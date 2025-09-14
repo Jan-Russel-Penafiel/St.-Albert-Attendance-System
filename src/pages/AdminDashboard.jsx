@@ -182,34 +182,91 @@ function AdminDashboard() {
       try {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
         
         const q = query(
           collection(db, "attendance"),
           where("idNumber", "==", idNumber.trim()),
-          where("timestamp", ">=", today)
+          where("timestamp", ">=", today),
+          where("timestamp", "<", tomorrow)
         );
         
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
-          setError(`Attendance for ID ${idNumber} already recorded today`);
-          setTimeout(() => setError(''), 3000);
+          const existingRecord = querySnapshot.docs[0].data();
+          const recordTime = existingRecord.timestamp.toDate().toLocaleTimeString();
+          setError(`Attendance for ID ${idNumber} already recorded today at ${recordTime}`);
+          setTimeout(() => setError(''), 5000);
           return;
         }
+        
+        console.log("✅ Duplicate check passed - no existing record found for today");
       } catch (indexError) {
-        // Temporary workaround: If we get an index error, we'll skip the duplicate check
-        console.warn("Skipping duplicate check due to index error:", indexError);
+        console.error("❌ Index error during duplicate check:", indexError);
         
         if (indexError.message.includes("requires an index")) {
+          const indexCreationUrl = indexError.message.match(/https:\/\/[^\s]+/)?.[0];
+          
           setError(
-            "Firebase index needs to be created. To avoid duplicate entries, please check records before scanning. " +
-            "Go to Firebase console to create the required index (see console for link)."
+            "⚠️ Firebase Composite Index Required! " +
+            "Click the link in the console to create the index automatically, then refresh the page. " +
+            "Attendance will still be recorded but duplicates cannot be detected until the index is created."
           );
-          console.info(
-            "Create the required index by visiting the link in the error message or going to:" +
-            "Firebase console > Firestore Database > Indexes > Add composite index"
+          
+          console.error(
+            "🔗 FIREBASE INDEX CREATION REQUIRED:\n" +
+            "═══════════════════════════════════════\n" +
+            (indexCreationUrl ? 
+              `📍 DIRECT LINK: ${indexCreationUrl}\n\n` : 
+              "📍 Manual Setup: Go to Firebase Console > Firestore Database > Indexes\n\n"
+            ) +
+            "📋 INDEX CONFIGURATION:\n" +
+            "   Collection: attendance\n" +
+            "   Fields to index:\n" +
+            "   1. idNumber (Ascending)\n" +
+            "   2. timestamp (Ascending)\n\n" +
+            "⚡ The index will take 1-5 minutes to build.\n" +
+            "═══════════════════════════════════════"
           );
-          // Don't return here, continue with recording attendance
-          setTimeout(() => setError(''), 8000);
+          
+          setTimeout(() => setError(''), 10000);
+        } else {
+          // For other errors, try alternative duplicate check method
+          console.warn("⚠️ Attempting alternative duplicate check method...");
+          try {
+            // Alternative: Get all records for this ID and check manually
+            const altQuery = query(
+              collection(db, "attendance"),
+              where("idNumber", "==", idNumber.trim())
+            );
+            const altSnapshot = await getDocs(altQuery);
+            
+            // Redefine today for this scope
+            const todayForCheck = new Date();
+            todayForCheck.setHours(0, 0, 0, 0);
+            
+            // Check if any record is from today
+            const todayRecords = altSnapshot.docs.filter(doc => {
+              const recordDate = doc.data().timestamp.toDate();
+              recordDate.setHours(0, 0, 0, 0);
+              return recordDate.getTime() === todayForCheck.getTime();
+            });
+            
+            if (todayRecords.length > 0) {
+              const existingRecord = todayRecords[0].data();
+              const recordTime = existingRecord.timestamp.toDate().toLocaleTimeString();
+              setError(`Attendance for ID ${idNumber} already recorded today at ${recordTime}`);
+              setTimeout(() => setError(''), 5000);
+              return;
+            }
+            
+            console.log("✅ Alternative duplicate check passed - no existing record found for today");
+          } catch (altError) {
+            console.error("❌ Alternative duplicate check also failed:", altError);
+            setError("Unable to check for duplicates. Proceeding with attendance recording...");
+            setTimeout(() => setError(''), 3000);
+          }
         }
       }
 
